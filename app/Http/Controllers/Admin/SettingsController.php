@@ -10,11 +10,7 @@ class SettingsController extends Controller
 {
     public function edit()
     {
-        $settings = [
-            'telegram_bot_token' => Setting::get('telegram_bot_token'),
-            'telegram_bot_username' => Setting::get('telegram_bot_username'),
-            'zenmoney_token' => Setting::get('zenmoney_token'),
-        ];
+        $settings = Setting::pluck('value', 'key')->toArray();
 
         return view('admin.settings.edit', compact('settings'));
     }
@@ -28,10 +24,12 @@ class SettingsController extends Controller
         ]);
 
         foreach ($validated as $key => $value) {
-            Setting::set($key, $value);
+            Setting::updateOrCreate(
+                ['key' => $key],
+                ['value' => $value]
+            );
         }
 
-        return redirect()->route('admin.settings.edit')
-            ->with('success', 'Settings updated successfully');
+        return redirect()->route('admin.settings.edit')->with('status', 'Settings updated successfully.');
     }
 }
