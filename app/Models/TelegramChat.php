@@ -3,23 +3,19 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 class TelegramChat extends Model
 {
     protected $fillable = [
         'name',
-        'chat_id',
-        'transaction_account_id',
-        'deposit_account_id',
+        'telegram_chat_id',
+        'zenmoney_account',
+        'transit_account'
     ];
 
-    protected $casts = [
-        'allowed_categories' => 'array',
-    ];
-
-    public function categories(): HasMany
+    public function expenseCategories(): BelongsToMany
     {
-        return $this->hasMany(AllowedCategory::class);
+        return $this->belongsToMany(ExpenseCategory::class, 'telegram_chat_expense_category');
     }
 }

@@ -6,20 +6,19 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    public function up(): void
+    public function up()
     {
         Schema::create('telegram_chats', function (Blueprint $table) {
             $table->id();
             $table->string('name');
-            $table->string('chat_id')->unique();
-            $table->string('transaction_account_id');
-            $table->string('deposit_account_id');
-            $table->json('allowed_categories')->nullable();
+            $table->string('telegram_chat_id');
+            $table->string('zenmoney_account');
+            $table->string('transit_account');
             $table->timestamps();
         });
     }
 
-    public function down(): void
+    public function down()
     {
         Schema::dropIfExists('telegram_chats');
     }
