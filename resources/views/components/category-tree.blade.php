@@ -4,9 +4,9 @@
     <label class="inline-flex items-center {{ $category['type'] === 'folder' ? 'font-medium' : '' }}">
         <input type="checkbox"
                name="expense_categories[]"
-               value="{{ $category['name'] }}"
+               value="{{ $category['code'] }}"
                data-type="{{ $category['type'] }}"
-               data-parent="{{ $category['type'] === 'category' ? ($category['parent_id'] ?? '') : $category['id'] }}"
+               data-parent="{{ $category['type'] === 'category' ? ($category['parent_id'] ?? '') : ($category['id'] ?? '') }}"
                class="category-checkbox rounded border-gray-300 text-blue-600 shadow-sm"
                {{ $category['type'] === 'folder' ? 'disabled' : '' }}>
         <span class="ml-2">{{ $category['name'] }}</span>

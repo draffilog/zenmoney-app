@@ -28,7 +28,7 @@
                             <x-input-label for="zenmoney_account" value="ZenMoney Account" />
                             <select id="zenmoney_account" name="zenmoney_account" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm">
                                 @foreach($zenmoneyAccounts as $account)
-                                    <option value="{{ $account->code_zenmoney_account }}">{{ $account->name }}</option>
+                                    <option value="{{ $account['id'] }}">{{ $account['name'] }} ({{ $account['balance'] }} {{ $account['currency'] }})</option>
                                 @endforeach
                             </select>
                             <x-input-error :messages="$errors->get('zenmoney_account')" class="mt-2" />
@@ -38,7 +38,7 @@
                             <x-input-label for="transit_account" value="Transit Account" />
                             <select id="transit_account" name="transit_account" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm">
                                 @foreach($zenmoneyAccounts as $account)
-                                    <option value="{{ $account->code_zenmoney_account }}">{{ $account->name }}</option>
+                                    <option value="{{ $account['id'] }}">{{ $account['name'] }} ({{ $account['balance'] }} {{ $account['currency'] }})</option>
                                 @endforeach
                             </select>
                             <x-input-error :messages="$errors->get('transit_account')" class="mt-2" />
@@ -47,8 +47,8 @@
                         <div>
                             <x-input-label value="Expense Categories" />
                             <div class="mt-2 space-y-1">
-                                @foreach($expenseCategories as $category)
-                                    <x-category-tree :category="$category" />
+                                @foreach($expenseCategories as $folder)
+                                    <x-expense-category-folder :folder="$folder" />
                                 @endforeach
                             </div>
                             <x-input-error :messages="$errors->get('expense_categories')" class="mt-2" />
@@ -66,36 +66,26 @@
     @push('scripts')
     <script>
         document.addEventListener('DOMContentLoaded', function() {
-            const form = document.querySelector('form');
+            // Обработка сворачивания/разворачивания папок
+            document.querySelectorAll('[data-folder-code]').forEach(button => {
+                button.addEventListener('click', function() {
+                    const folderCode = this.dataset.folderCode;
+                    const content = document.getElementById(`folder-content-${folderCode}`);
+                    const icon = document.getElementById(`folder-icon-${folderCode}`);
 
-            form.addEventListener('submit', function(e) {
-                const checkedBoxes = document.querySelectorAll('.category-checkbox:checked');
-                const hasOnlyParents = Array.from(checkedBoxes).every(box =>
-                    box.dataset.type === 'folder'
-                );
-
-                if (checkedBoxes.length === 0 || hasOnlyParents) {
-                    e.preventDefault();
-                    alert('Пожалуйста, выберите хотя бы одну категорию второго уровня');
-                }
-            });
-
-            // Отключаем чекбоксы родительских категорий
-            document.querySelectorAll('.category-checkbox[data-type="folder"]').forEach(checkbox => {
-                checkbox.disabled = true;
-            });
-
-            // Подсвечиваем родительскую категорию при выборе дочерней
-            document.querySelectorAll('.category-checkbox[data-type="category"]').forEach(checkbox => {
-                checkbox.addEventListener('change', function() {
-                    const parentId = this.dataset.parent;
-                    if (parentId) {
-                        const parentCheckbox = document.querySelector(`.category-checkbox[value="${parentId}"]`);
-                        if (parentCheckbox) {
-                            parentCheckbox.checked = this.checked;
-                        }
-                    }
+                    content.classList.toggle('hidden');
+                    icon.classList.toggle('rotate-90');
                 });
+            });
+
+            // Валидация формы
+            const form = document.querySelector('form');
+            form.addEventListener('submit', function(e) {
+                const checkedBoxes = document.querySelectorAll('input[name="expense_categories[]"]:checked');
+                if (checkedBoxes.length === 0) {
+                    e.preventDefault();
+                    alert('Пожалуйста, выберите хотя бы одну категорию расходов');
+                }
             });
         });
     </script>
