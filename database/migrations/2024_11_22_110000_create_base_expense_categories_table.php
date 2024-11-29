@@ -10,9 +10,14 @@ return new class extends Migration
     {
         Schema::create('expense_categories', function (Blueprint $table) {
             $table->id();
+            $table->string('code')->unique();
             $table->string('name');
-            $table->foreignId('parent_id')->nullable()->constrained('expense_categories')->nullOnDelete();
+            $table->string('type');  // folder или category
+            $table->string('parent_code')->nullable();
             $table->timestamps();
+
+            $table->index('parent_code');
+            $table->index('type');
         });
     }
 

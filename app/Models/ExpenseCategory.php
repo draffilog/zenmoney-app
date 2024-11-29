@@ -14,8 +14,18 @@ class ExpenseCategory extends Model
         'parent_code'
     ];
 
+    public function parent()
+    {
+        return $this->belongsTo(ExpenseCategory::class, 'parent_code', 'code');
+    }
+
+    public function children()
+    {
+        return $this->hasMany(ExpenseCategory::class, 'parent_code', 'code');
+    }
+
     public function telegramChats(): BelongsToMany
     {
-        return $this->belongsToMany(TelegramChat::class, 'telegram_chat_expense_category');
+        return $this->belongsToMany(TelegramChat::class);
     }
 }

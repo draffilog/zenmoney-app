@@ -9,7 +9,7 @@
         <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
             <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
                 <div class="p-6 text-gray-900">
-                    <form method="POST" action="{{ route('admin.chats.store') }}" class="space-y-6">
+                    <form method="POST" action="{{ route('admin.chats.store') }}" class="space-y-6" id="chatForm">
                         @csrf
 
                         <div>
@@ -25,7 +25,7 @@
                         </div>
 
                         <div>
-                            <x-input-label for="zenmoney_account" value="ZenMoney Account" />
+                            <x-input-label for="zenmoney_account" value="Счет начисления (пользователя)" />
                             <select id="zenmoney_account" name="zenmoney_account" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm">
                                 @foreach($zenmoneyAccounts as $account)
                                     <option value="{{ $account['id'] }}">{{ $account['name'] }} ({{ $account['balance'] }} {{ $account['currency'] }})</option>
@@ -35,7 +35,7 @@
                         </div>
 
                         <div>
-                            <x-input-label for="transit_account" value="Transit Account" />
+                            <x-input-label for="transit_account" value="Счет списания (транзитный)" />
                             <select id="transit_account" name="transit_account" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm">
                                 @foreach($zenmoneyAccounts as $account)
                                     <option value="{{ $account['id'] }}">{{ $account['name'] }} ({{ $account['balance'] }} {{ $account['currency'] }})</option>
@@ -48,14 +48,37 @@
                             <x-input-label value="Expense Categories" />
                             <div class="mt-2 space-y-1">
                                 @foreach($expenseCategories as $folder)
-                                    <x-expense-category-folder :folder="$folder" />
+                                    <div class="folder-group">
+                                        <div class="flex items-center">
+                                            <button type="button" class="folder-toggle" data-folder-code="{{ $folder['code'] }}">
+                                                <svg class="w-4 h-4 transform transition-transform" id="folder-icon-{{ $folder['code'] }}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                                                </svg>
+                                            </button>
+                                            <span class="ml-2">{{ $folder['name'] }}</span>
+                                        </div>
+                                        <div class="ml-6 mt-1 space-y-1" id="folder-content-{{ $folder['code'] }}">
+                                            @foreach($folder['children'] as $category)
+                                                <div class="flex items-center">
+                                                    <input type="checkbox"
+                                                           name="expense_categories[]"
+                                                           value="{{ $category['code'] }}"
+                                                           id="category-{{ $category['code'] }}"
+                                                           class="rounded border-gray-300 text-indigo-600 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50">
+                                                    <label for="category-{{ $category['code'] }}" class="ml-2">
+                                                        {{ $category['name'] }}
+                                                    </label>
+                                                </div>
+                                            @endforeach
+                                        </div>
+                                    </div>
                                 @endforeach
                             </div>
                             <x-input-error :messages="$errors->get('expense_categories')" class="mt-2" />
                         </div>
 
                         <div class="flex items-center gap-4">
-                            <x-primary-button>{{ __('Save') }}</x-primary-button>
+                            <x-primary-button type="submit">{{ __('Save') }}</x-primary-button>
                         </div>
                     </form>
                 </div>
@@ -66,8 +89,26 @@
     @push('scripts')
     <script>
         document.addEventListener('DOMContentLoaded', function() {
+            const form = document.getElementById('chatForm');
+
+            form.addEventListener('submit', function(e) {
+                e.preventDefault(); // Предотвращаем стандартную отправку формы
+
+                const checkedCategories = document.querySelectorAll('input[name="expense_categories[]"]:checked');
+
+                if (checkedCategories.length === 0) {
+                    alert('Пожалуйста, выберите хотя бы одну категорию расходов');
+                    return;
+                }
+
+                console.log('Submitting form with categories:', Array.from(checkedCategories).map(cb => cb.value));
+
+                // Если все в порядке, отправляем форму
+                this.submit();
+            });
+
             // Обработка сворачивания/разворачивания папок
-            document.querySelectorAll('[data-folder-code]').forEach(button => {
+            document.querySelectorAll('.folder-toggle').forEach(button => {
                 button.addEventListener('click', function() {
                     const folderCode = this.dataset.folderCode;
                     const content = document.getElementById(`folder-content-${folderCode}`);
@@ -76,16 +117,6 @@
                     content.classList.toggle('hidden');
                     icon.classList.toggle('rotate-90');
                 });
-            });
-
-            // Валидация формы
-            const form = document.querySelector('form');
-            form.addEventListener('submit', function(e) {
-                const checkedBoxes = document.querySelectorAll('input[name="expense_categories[]"]:checked');
-                if (checkedBoxes.length === 0) {
-                    e.preventDefault();
-                    alert('Пожалуйста, выберите хотя бы одну категорию расходов');
-                }
             });
         });
     </script>

@@ -13,5 +13,8 @@ class DatabaseSeeder extends Seeder
             ExpenseCategoriesSeeder::class,
             ZenmoneyAccountsSeeder::class,
         ]);
+
+        // Синхронизация категорий из ZenMoney
+        $this->call(ZenMoneyCategoriesSeeder::class);
     }
 }

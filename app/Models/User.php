@@ -28,8 +28,8 @@ class User extends Authenticatable
         'is_admin' => 'boolean',
     ];
 
-    public function isAdmin()
+    public function isAdmin(): bool
     {
-        return $this->is_admin;
+        return (bool) $this->is_admin;
     }
 }

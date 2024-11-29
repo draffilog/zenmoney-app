@@ -53,9 +53,9 @@
                             <select name="zenmoney_account" id="zenmoney_account"
                                     class="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
                                 @foreach($zenmoneyAccounts as $account)
-                                    <option value="{{ $account->id }}"
-                                            {{ old('zenmoney_account', $chat->zenmoney_account_id) == $account->id ? 'selected' : '' }}>
-                                        {{ $account->name }}
+                                    <option value="{{ $account['id'] }}"
+                                            {{ old('zenmoney_account', $chat->zenmoney_account_id) == $account['id'] ? 'selected' : '' }}>
+                                        {{ $account['name'] }} ({{ $account['balance'] }} {{ $account['currency'] }})
                                     </option>
                                 @endforeach
                             </select>
@@ -66,50 +66,46 @@
                             <select name="transit_account" id="transit_account"
                                     class="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
                                 @foreach($zenmoneyAccounts as $account)
-                                    <option value="{{ $account->id }}"
-                                            {{ old('transit_account', $chat->transit_account_id) == $account->id ? 'selected' : '' }}>
-                                        {{ $account->name }}
+                                    <option value="{{ $account['id'] }}"
+                                            {{ old('transit_account', $chat->transit_account_id) == $account['id'] ? 'selected' : '' }}>
+                                        {{ $account['name'] }} ({{ $account['balance'] }} {{ $account['currency'] }})
                                     </option>
                                 @endforeach
                             </select>
                         </div>
 
-                        <div class="mb-4">
-                            <label class="block text-sm font-medium text-gray-700 mb-2">Категории расходов</label>
-                            @foreach($expenseCategories as $folder)
-                                <div class="mb-2">
-                                    <button type="button"
-                                            class="flex items-center w-full text-left cursor-pointer p-2 hover:bg-gray-50 rounded"
-                                            id="folder-header-{{ $folder['code'] }}"
-                                            data-folder-code="{{ $folder['code'] }}">
-                                        <svg class="w-4 h-4 mr-2 transform transition-transform duration-200"
-                                             id="folder-icon-{{ $folder['code'] }}"
-                                             fill="none"
-                                             stroke="currentColor"
-                                             viewBox="0 0 24 24">
-                                            <path stroke-linecap="round"
-                                                  stroke-linejoin="round"
-                                                  stroke-width="2"
-                                                  d="M9 5l7 7-7 7"/>
-                                        </svg>
-                                        <span class="font-medium text-gray-700">{{ $folder['name'] }}</span>
-                                    </button>
-
-                                    <div class="ml-6 space-y-2 hidden transition-all duration-200 ease-in-out"
-                                         id="folder-content-{{ $folder['code'] }}">
-                                        @foreach($folder['children'] as $category)
-                                            <label class="flex items-center p-2 hover:bg-gray-50 rounded cursor-pointer">
-                                                <input type="checkbox"
-                                                       name="expense_categories[]"
-                                                       value="{{ $category['code'] }}"
-                                                       {{ in_array($category['code'], old('expense_categories', $chat->expenseCategories ? $chat->expenseCategories->pluck('code')->toArray() : [])) ? 'checked' : '' }}
-                                                       class="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50">
-                                                <span class="ml-2">{{ $category['name'] }}</span>
-                                            </label>
-                                        @endforeach
+                        <div>
+                            <x-input-label value="Expense Categories" />
+                            <div class="mt-2 space-y-1">
+                                @foreach($expenseCategories as $folder)
+                                    <div class="folder-group">
+                                        <div class="flex items-center">
+                                            <button type="button" class="folder-toggle" data-folder-code="{{ $folder['code'] }}">
+                                                <svg class="w-4 h-4 transform transition-transform" id="folder-icon-{{ $folder['code'] }}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                                                </svg>
+                                            </button>
+                                            <span class="ml-2">{{ $folder['name'] }}</span>
+                                        </div>
+                                        <div class="ml-6 mt-1 space-y-1" id="folder-content-{{ $folder['code'] }}">
+                                            @foreach($folder['children'] as $category)
+                                                <div class="flex items-center">
+                                                    <input type="checkbox"
+                                                           name="expense_categories[]"
+                                                           value="{{ $category['code'] }}"
+                                                           id="category-{{ $category['code'] }}"
+                                                           @checked(in_array($category['code'], $selectedCategories))
+                                                           class="rounded border-gray-300 text-indigo-600 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50">
+                                                    <label for="category-{{ $category['code'] }}" class="ml-2">
+                                                        {{ $category['name'] }}
+                                                    </label>
+                                                </div>
+                                            @endforeach
+                                        </div>
                                     </div>
-                                </div>
-                            @endforeach
+                                @endforeach
+                            </div>
+                            <x-input-error :messages="$errors->get('expense_categories')" class="mt-2" />
                         </div>
 
                         <div class="flex items-center justify-end">

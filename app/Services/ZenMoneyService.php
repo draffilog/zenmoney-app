@@ -26,29 +26,26 @@ class ZenMoneyService
             ])->post("{$this->baseUrl}/diff", [
                 'currentClientTimestamp' => time(),
                 'lastServerTimestamp' => 0,
-                'account' => []  // Запрашиваем счета
+                'account' => []
             ]);
 
-            \Log::debug('ZenMoney API raw response:', [
+            \Log::debug('ZenMoney API response status:', [
                 'status' => $response->status(),
-                'headers' => $response->headers(),
-                'body' => $response->body()
+                'account_count' => count($response->json()['account'] ?? [])
             ]);
 
             if (!$response->successful()) {
                 \Log::error('ZenMoney API error', [
                     'status' => $response->status(),
-                    'body' => $response->body()
+                    'error' => $response->body()
                 ]);
-                throw new \Exception("Failed to fetch data from ZenMoney API: HTTP {$response->status()} - " . $response->body());
+                throw new \Exception("Failed to fetch data from ZenMoney API: HTTP {$response->status()}");
             }
 
             $data = $response->json();
 
             if (!isset($data['account']) || empty($data['account'])) {
-                \Log::warning('ZenMoney API returned no accounts', [
-                    'response_data' => $data
-                ]);
+                \Log::warning('ZenMoney API returned no accounts');
                 return [];
             }
 
@@ -59,8 +56,7 @@ class ZenMoneyService
             return $this->formatAccounts($data['account']);
         } catch (\Exception $e) {
             \Log::error('Failed to fetch ZenMoney accounts', [
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'error' => $e->getMessage()
             ]);
             throw $e;
         }
@@ -75,7 +71,6 @@ class ZenMoneyService
         $formatted = [];
 
         foreach ($accounts as $account) {
-            // Пропускаем удаленные или скрытые счета
             if (!empty($account['deleted']) || !empty($account['archive'])) {
                 continue;
             }
@@ -91,7 +86,6 @@ class ZenMoneyService
             ];
         }
 
-        // Сортируем счета по имени
         usort($formatted, fn($a, $b) => strcmp($a['name'], $b['name']));
 
         \Log::debug('Accounts formatted', [
