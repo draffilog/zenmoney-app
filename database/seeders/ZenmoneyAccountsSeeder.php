@@ -4,6 +4,7 @@ namespace Database\Seeders;
 
 use App\Models\ZenmoneyAccount;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Str;
 
 class ZenmoneyAccountsSeeder extends Seeder
 {
@@ -11,17 +12,16 @@ class ZenmoneyAccountsSeeder extends Seeder
     {
         $accounts = [
             [
+                'id' => Str::uuid()->toString(),
                 'name' => 'Счёт Вероники',
                 'code_zenmoney_account' => 'account1'
             ],
             [
-                'name' => 'Общий счет',
+                'id' => Str::uuid()->toString(),
+                'name' => 'Транзитный счёт',
                 'code_zenmoney_account' => 'account2'
             ],
-            [
-                'name' => 'Транзитный счет',
-                'code_zenmoney_account' => 'account3'
-            ],
+            // Добавьте другие тестовые аккаунты если нужно
         ];
 
         foreach ($accounts as $account) {

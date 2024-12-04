@@ -4,6 +4,9 @@ namespace App\Services;
 
 use Illuminate\Support\Facades\Http;
 use Illuminate\Http\Client\Response;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+
 
 class ZenMoneyService
 {
@@ -12,13 +15,19 @@ class ZenMoneyService
 
     public function __construct()
     {
-        $this->token = config('services.zenmoney.token');
+        $token = config('services.zenmoney.token');
+
+        if (!$token) {
+            throw new \RuntimeException('ZenMoney API token not configured. Please check ZENMONEY_API_TOKEN in .env');
+        }
+
+        $this->token = $token;
     }
 
     public function getAccounts(): array
     {
         try {
-            \Log::info('Attempting to fetch ZenMoney accounts');
+
 
             $response = Http::withHeaders([
                 'Authorization' => "Bearer {$this->token}",
@@ -29,44 +38,32 @@ class ZenMoneyService
                 'account' => []
             ]);
 
-            \Log::debug('ZenMoney API response status:', [
-                'status' => $response->status(),
-                'account_count' => count($response->json()['account'] ?? [])
-            ]);
+
 
             if (!$response->successful()) {
-                \Log::error('ZenMoney API error', [
-                    'status' => $response->status(),
-                    'error' => $response->body()
-                ]);
+
                 throw new \Exception("Failed to fetch data from ZenMoney API: HTTP {$response->status()}");
             }
 
             $data = $response->json();
 
             if (!isset($data['account']) || empty($data['account'])) {
-                \Log::warning('ZenMoney API returned no accounts');
+
                 return [];
             }
 
-            \Log::info('Successfully fetched ZenMoney accounts', [
-                'accounts_count' => count($data['account'])
-            ]);
+
 
             return $this->formatAccounts($data['account']);
         } catch (\Exception $e) {
-            \Log::error('Failed to fetch ZenMoney accounts', [
-                'error' => $e->getMessage()
-            ]);
+
             throw $e;
         }
     }
 
     protected function formatAccounts(array $accounts): array
     {
-        \Log::debug('Formatting accounts', [
-            'input_accounts_count' => count($accounts)
-        ]);
+
 
         $formatted = [];
 
@@ -77,6 +74,7 @@ class ZenMoneyService
 
             $formatted[] = [
                 'id' => $account['id'],
+                'code_zenmoney_account' => $account['id'],
                 'name' => $account['title'],
                 'balance' => $account['balance'] ?? 0,
                 'currency' => $account['instrument'] ?? 'RUB',
@@ -88,9 +86,7 @@ class ZenMoneyService
 
         usort($formatted, fn($a, $b) => strcmp($a['name'], $b['name']));
 
-        \Log::debug('Accounts formatted', [
-            'output_accounts_count' => count($formatted)
-        ]);
+
 
         return $formatted;
     }
@@ -98,52 +94,24 @@ class ZenMoneyService
     public function getCategories(): array
     {
         try {
-            \Log::info('Attempting to fetch ZenMoney categories');
 
             $response = Http::withHeaders([
                 'Authorization' => "Bearer {$this->token}",
                 'Content-Type' => 'application/json'
             ])->post("{$this->baseUrl}/diff", [
                 'currentClientTimestamp' => time(),
-                'lastServerTimestamp' => 0,
-                'tag' => []
+                'lastServerTimestamp' => 0
             ]);
 
-            \Log::debug('ZenMoney API raw response:', [
-                'status' => $response->status(),
-                'headers' => $response->headers(),
-                'body' => $response->body()
-            ]);
-
-            if (!$response->successful()) {
-                \Log::error('ZenMoney API error', [
-                    'status' => $response->status(),
-                    'body' => $response->body(),
-                    'token_length' => strlen($this->token),
-                    'url' => "{$this->baseUrl}/diff"
-                ]);
-                throw new \Exception("Failed to fetch data from ZenMoney API: HTTP {$response->status()} - " . $response->body());
-            }
+            $this->handleErrors($response);
 
             $data = $response->json();
 
-            if (!isset($data['tag']) || empty($data['tag'])) {
-                \Log::warning('ZenMoney API returned no categories', [
-                    'response_data' => $data
-                ]);
-                return [];
-            }
 
-            \Log::info('Successfully fetched ZenMoney categories', [
-                'categories_count' => count($data['tag'])
-            ]);
 
-            return $this->formatCategories($data['tag']);
+            return $this->formatCategories($data['tag'] ?? []);
         } catch (\Exception $e) {
-            \Log::error('Failed to fetch ZenMoney categories', [
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
-            ]);
+
             throw $e;
         }
     }
@@ -169,28 +137,18 @@ class ZenMoneyService
             ])->$method("{$this->baseUrl}/{$endpoint}", $data);
 
             if (!$response->successful()) {
-                \Log::error('ZenMoney API error', [
-                    'status' => $response->status(),
-                    'body' => $response->body()
-                ]);
+
                 throw new \Exception('Failed to fetch data from ZenMoney API: ' . $response->body());
             }
 
             return $response->json();
         } catch (\Exception $e) {
-            \Log::error('ZenMoney API request failed', [
-                'error' => $e->getMessage(),
-                'endpoint' => $endpoint
-            ]);
             throw $e;
         }
     }
 
     protected function formatCategories(array $categories): array
     {
-        \Log::debug('Formatting categories', [
-            'input_categories_count' => count($categories)
-        ]);
 
         $formatted = [];
         $parentCategories = [];
@@ -229,10 +187,6 @@ class ZenMoneyService
             usort($category['children'], fn($a, $b) => strcmp($a['name'], $b['name']));
         }
 
-        \Log::debug('Categories formatted', [
-            'output_categories_count' => count($result)
-        ]);
-
         return $result;
     }
 
@@ -248,31 +202,20 @@ class ZenMoneyService
 
         $this->handleErrors($response);
 
-        // Log the raw response for debugging
-        \Log::debug('ZenMoney Raw Response:', [
-            'status' => $response->status(),
-            'body' => $response->body(),
-            'headers' => $response->headers()
-        ]);
-
         return $response->json();
     }
 
     protected function handleErrors(Response $response): void
     {
         if (!$response->successful()) {
-            \Log::error('ZenMoney API error', [
-                'status' => $response->status(),
-                'body' => $response->body()
-            ]);
-            throw new \Exception('Failed to fetch data from ZenMoney API: ' . $response->body());
+            throw new \Exception('Failed to fetch data from ZenMoney API: ' . $response->status());
         }
     }
 
     public function refreshAccounts(): array
     {
         try {
-            \Log::info('Forcing refresh of ZenMoney accounts');
+
 
             $response = Http::withHeaders([
                 'Authorization' => "Bearer {$this->token}",
@@ -285,20 +228,96 @@ class ZenMoneyService
             ]);
 
             if (!$response->successful()) {
-                \Log::error('ZenMoney API error during refresh', [
-                    'status' => $response->status(),
-                    'body' => $response->body()
-                ]);
+
                 throw new \Exception("Failed to refresh ZenMoney accounts: HTTP {$response->status()} - " . $response->body());
             }
 
             $data = $response->json();
             return $this->formatAccounts($data['account'] ?? []);
         } catch (\Exception $e) {
-            \Log::error('Failed to refresh ZenMoney accounts', [
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
-            ]);
+
+            throw $e;
+        }
+    }
+
+    public function updateCategories()
+    {
+        try {
+            // Получаем категории из API
+            $categories = $this->getCategories();
+
+            // Начинаем транзакцию
+            DB::beginTransaction();
+
+            try {
+                // Сохраняем существующие связи с кодами категорий
+                $existingLinks = DB::table('telegram_chat_expense_category')
+                    ->join('expense_categories', 'expense_categories.id', '=', 'telegram_chat_expense_category.expense_category_id')
+                    ->select('telegram_chat_expense_category.*', 'expense_categories.code as category_code')
+                    ->get();
+
+                // Отключаем внешний ключ временно
+                DB::statement('SET FOREIGN_KEY_CHECKS=0;');
+
+                // Очищаем старые категории
+                DB::table('expense_categories')->truncate();
+
+                // Включаем обратно внешний ключ
+                DB::statement('SET FOREIGN_KEY_CHECKS=1;');
+
+                // Добавляем родительские категории и сохраняем их новые ID
+                $codeToIdMap = [];
+
+                foreach ($categories as $parentCategory) {
+                    $id = DB::table('expense_categories')->insertGetId([
+                        'code' => $parentCategory['code'],
+                        'name' => $parentCategory['name'],
+                        'type' => $parentCategory['type'],
+                        'parent_code' => null,
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ]);
+                    $codeToIdMap[$parentCategory['code']] = $id;
+
+                    // Добавляем дочерние категории
+                    foreach ($parentCategory['children'] as $child) {
+                        $childId = DB::table('expense_categories')->insertGetId([
+                            'code' => $child['code'],
+                            'name' => $child['name'],
+                            'type' => $child['type'],
+                            'parent_code' => $parentCategory['code'],
+                            'created_at' => now(),
+                            'updated_at' => now(),
+                        ]);
+                        $codeToIdMap[$child['code']] = $childId;
+                    }
+                }
+
+                // Очищаем старые связи
+                DB::table('telegram_chat_expense_category')->truncate();
+
+                // Восстанавливаем связи используя сохраненные коды категорий
+                foreach ($existingLinks as $link) {
+                    if (isset($codeToIdMap[$link->category_code])) {
+                        DB::table('telegram_chat_expense_category')->insert([
+                            'telegram_chat_id' => $link->telegram_chat_id,
+                            'expense_category_id' => $codeToIdMap[$link->category_code],
+                            'created_at' => $link->created_at ?? now(),
+                            'updated_at' => $link->updated_at ?? now()
+                        ]);
+                    }
+                }
+
+                DB::commit();
+                Log::info('Категории успешно обновлены. Восстановлено связей: ' . count($existingLinks));
+
+            } catch (\Exception $e) {
+                DB::rollBack();
+                Log::error('Ошибка при обновлении категорий: ' . $e->getMessage());
+                throw $e;
+            }
+        } catch (\Exception $e) {
+            Log::error('Ошибка при получении категорий из API: ' . $e->getMessage());
             throw $e;
         }
     }

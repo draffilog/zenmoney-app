@@ -12,8 +12,12 @@ return new class extends Migration
             $table->id();
             $table->string('name');
             $table->string('telegram_chat_id');
-            $table->string('zenmoney_account');
-            $table->string('transit_account');
+            $table->foreignId('zenmoney_account_id')
+                ->constrained('zenmoney_accounts')
+                ->onDelete('cascade');
+            $table->foreignId('transit_account_id')
+                ->constrained('zenmoney_accounts')
+                ->onDelete('cascade');
             $table->timestamps();
         });
     }

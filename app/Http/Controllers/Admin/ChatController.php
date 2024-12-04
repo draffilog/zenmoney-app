@@ -24,124 +24,97 @@ class ChatController extends Controller
         try {
             $accounts = $this->zenMoneyService->getAccounts();
 
-            // Получаем категории из базы данных
-            $expenseCategories = ExpenseCategory::where('type', 'folder')
+            // Получаем только родительские категории с их подкатегориями
+            $categories = ExpenseCategory::where('type', 'folder')
                 ->with('children')
                 ->get()
                 ->map(function ($folder) {
                     return [
+                        'id' => $folder->id,
                         'code' => $folder->code,
                         'name' => $folder->name,
                         'type' => 'folder',
                         'children' => $folder->children->map(function ($category) {
                             return [
+                                'id' => $category->id,
                                 'code' => $category->code,
                                 'name' => $category->name,
-                                'type' => 'category',
-                                'parent_code' => $category->parent_code
+                                'type' => 'category'
                             ];
-                        })->toArray()
+                        })
                     ];
-                })
-                ->toArray();
+                });
 
             return view('admin.chats.create', [
                 'zenmoneyAccounts' => $accounts,
-                'expenseCategories' => $expenseCategories
+                'categories' => $categories
             ]);
         } catch (\Exception $e) {
-            \Log::error('Failed to fetch data:', [
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
-            ]);
 
-            return back()->withErrors(['error' => 'Не удалось загрузить данные. Пожалуйста, попробуйте позже.']);
+            return back()->withErrors(['error' => 'Не удалось загрузить данные']);
         }
     }
 
     public function store(Request $request)
     {
-        \Log::info('Starting chat creation with data:', $request->all());
-
         try {
-            // Валидация с детальным логированием
+            DB::beginTransaction();
+
             $validated = $request->validate([
                 'name' => 'required|string|max:255',
-                'telegram_chat_id' => 'required|string|max:255',
-                'zenmoney_account' => 'required|string',
-                'transit_account' => 'required|string',
+                'telegram_chat_id' => 'required|string',
+                'zenmoney_account_id' => 'required|string',
+                'transit_account_id' => 'required|string',
                 'expense_categories' => 'required|array',
             ]);
 
-            \Log::info('Validation passed. Validated data:', $validated);
+            // Получаем данные аккаунтов из ZenMoney API
+            $accounts = $this->zenMoneyService->getAccounts();
+            $zenmoneyAccountData = collect($accounts)->firstWhere('id', $validated['zenmoney_account_id']);
+            $transitAccountData = collect($accounts)->firstWhere('id', $validated['transit_account_id']);
 
-            DB::beginTransaction();
+            if (!$zenmoneyAccountData || !$transitAccountData) {
+                throw new \Exception('Один или оба аккаунта не найдены в ZenMoney');
+            }
 
-            // Создание ZenMoney аккаунтов
-            \Log::info('Creating ZenMoney account with data:', [
-                'code' => $validated['zenmoney_account'],
-                'name' => $this->getAccountName($validated['zenmoney_account'])
-            ]);
-
+            // Создаем или обновляем аккаунты в базе данных
             $zenmoneyAccount = ZenmoneyAccount::updateOrCreate(
-                ['code_zenmoney_account' => $validated['zenmoney_account']],
-                ['name' => $this->getAccountName($validated['zenmoney_account'])]
+                ['code_zenmoney_account' => $zenmoneyAccountData['id']],
+                [
+                    'id' => $zenmoneyAccountData['id'],
+                    'name' => $zenmoneyAccountData['name']
+                ]
             );
-
-            \Log::info('Created ZenMoney account:', $zenmoneyAccount->toArray());
 
             $transitAccount = ZenmoneyAccount::updateOrCreate(
-                ['code_zenmoney_account' => $validated['transit_account']],
-                ['name' => $this->getAccountName($validated['transit_account'])]
+                ['code_zenmoney_account' => $transitAccountData['id']],
+                [
+                    'id' => $transitAccountData['id'],
+                    'name' => $transitAccountData['name']
+                ]
             );
 
-            \Log::info('Created Transit account:', $transitAccount->toArray());
-
-            // Создание чата
-            $chatData = [
+            // Создаем чат
+            $chat = TelegramChat::create([
                 'name' => $validated['name'],
                 'telegram_chat_id' => $validated['telegram_chat_id'],
                 'zenmoney_account_id' => $zenmoneyAccount->id,
                 'transit_account_id' => $transitAccount->id,
-            ];
+            ]);
 
-            \Log::info('Creating chat with data:', $chatData);
-
-            $chat = TelegramChat::create($chatData);
-
-            \Log::info('Created chat:', $chat->toArray());
-
-            // Привязка категорий
-            \Log::info('Finding category IDs for codes:', $validated['expense_categories']);
-
-            $categoryIds = ExpenseCategory::whereIn('code', $validated['expense_categories'])
-                ->pluck('id')
-                ->toArray();
-
-            \Log::info('Found category IDs:', $categoryIds);
-
-            $chat->expenseCategories()->attach($categoryIds);
-
-            \Log::info('Attached categories to chat');
+            // Прикрепляем категории напрямую по их ID
+            if (!empty($validated['expense_categories'])) {
+                $chat->expenseCategories()->attach($validated['expense_categories']);
+            }
 
             DB::commit();
 
-            \Log::info('Chat creation completed successfully');
-
-            return redirect()->route('admin.dashboard')
-                ->with('status', 'Chat created successfully.');
+            return redirect()->route('admin.chats.index')
+                ->with('success', 'Чат успешно создан');
 
         } catch (\Exception $e) {
             DB::rollBack();
-            \Log::error('Failed to create chat:', [
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
-                'request_data' => $request->all()
-            ]);
-
-            return back()
-                ->withInput()
-                ->withErrors(['error' => 'Не удалось создать чат: ' . $e->getMessage()]);
+            return back()->withInput()->withErrors(['error' => 'Не удалось создать чат: ' . $e->getMessage()]);
         }
     }
 
@@ -193,11 +166,6 @@ class ChatController extends Controller
                 })
                 ->toArray();
 
-            \Log::info('Edit chat data:', [
-                'chat_id' => $chat->id,
-                'selected_categories' => $chat->expenseCategories->pluck('code')->toArray(),
-                'available_categories' => $expenseCategories
-            ]);
 
             return view('admin.chats.edit', [
                 'chat' => $chat,
@@ -206,10 +174,7 @@ class ChatController extends Controller
                 'selectedCategories' => $chat->expenseCategories->pluck('code')->toArray()
             ]);
         } catch (\Exception $e) {
-            \Log::error('Failed to load edit form:', [
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
-            ]);
+
 
             return back()->withErrors(['error' => 'Не удалось загрузить форму редактирования. Пожалуйста, попробуйте позже.']);
         }
@@ -228,9 +193,7 @@ class ChatController extends Controller
         try {
             DB::beginTransaction();
 
-            \Log::info('Request data:', $request->all());
-
-            // Создаем или обновляем аккаунты ZenMoney
+                        // Создаем или обновляем аккаунты ZenMoney
             $zenmoneyAccount = ZenmoneyAccount::updateOrCreate(
                 ['code_zenmoney_account' => $validated['zenmoney_account']],
                 ['name' => $this->getAccountName($validated['zenmoney_account'])]
@@ -264,10 +227,7 @@ class ChatController extends Controller
 
         } catch (\Exception $e) {
             DB::rollBack();
-            \Log::error('Failed to update chat:', [
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
-            ]);
+
 
             return back()
                 ->withInput()
@@ -281,5 +241,11 @@ class ChatController extends Controller
 
         return redirect()->route('admin.dashboard')
             ->with('success', 'Чат успешно удален');
+    }
+
+    public function index()
+    {
+        $chats = TelegramChat::with(['zenmoneyAccount', 'transitAccount'])->get();
+        return view('admin.chats.index', compact('chats'));
     }
 }

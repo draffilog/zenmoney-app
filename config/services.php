@@ -35,8 +35,12 @@ return [
         ],
     ],
 
+    'telegram' => [
+        'bot_token' => env('TELEGRAM_BOT_TOKEN'),
+    ],
+
     'zenmoney' => [
-        'token' => env('ZENMONEY_TOKEN'),
+        'token' => env('ZENMONEY_API_TOKEN'),
     ],
 
 ];

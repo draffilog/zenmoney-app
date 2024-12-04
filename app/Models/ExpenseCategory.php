@@ -26,6 +26,44 @@ class ExpenseCategory extends Model
 
     public function telegramChats(): BelongsToMany
     {
-        return $this->belongsToMany(TelegramChat::class);
+        return $this->belongsToMany(TelegramChat::class, 'telegram_chat_expense_category');
+    }
+
+    /**
+     * Получить полный путь категории (включая родительские категории)
+     */
+    public function getFullPath(): string
+    {
+        $path = [$this->name];
+        $current = $this->parent;
+
+        while ($current) {
+            array_unshift($path, $current->name);
+            $current = $current->parent;
+        }
+
+        return implode(' > ', $path);
+    }
+
+    /**
+     * Получить все доступные подкатегории (включая текущую)
+     */
+    public function getAllChildren()
+    {
+        $children = collect([$this]);
+
+        foreach ($this->children as $child) {
+            $children = $children->merge($child->getAllChildren());
+        }
+
+        return $children;
+    }
+
+    /**
+     * Проверить, является ли категория конечной (без подкатегорий)
+     */
+    public function isLeaf(): bool
+    {
+        return $this->children()->count() === 0;
     }
 }

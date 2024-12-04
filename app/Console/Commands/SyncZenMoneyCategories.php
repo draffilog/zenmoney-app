@@ -22,43 +22,60 @@ class SyncZenMoneyCategories extends Command
 
             // Получаем категории из API
             $apiCategories = $zenMoneyService->getCategories();
-
             $this->info('Получено категорий из API: ' . count($apiCategories));
 
-            // Очищаем существующие категории
-            DB::statement('TRUNCATE telegram_chat_expense_category CASCADE');
-            DB::statement('TRUNCATE expense_categories CASCADE');
+            // Получаем все существующие категории
+            $existingCategories = ExpenseCategory::pluck('id', 'code')->toArray();
 
-            $this->info('Существующие категории очищены');
+            // Собираем все коды категорий из API
+            $apiCodes = [];
 
-            // Сначала добавляем родительские категории (папки)
+            // Обновляем или создаем родительские категории
             foreach ($apiCategories as $folder) {
-                ExpenseCategory::create([
-                    'code' => $folder['code'],
-                    'name' => $folder['name'],
-                    'type' => 'folder',
-                    'parent_code' => null
-                ]);
+                $apiCodes[] = $folder['code'];
 
-                $this->info("Добавлена папка: {$folder['name']}");
+                ExpenseCategory::updateOrCreate(
+                    ['code' => $folder['code']],
+                    [
+                        'name' => $folder['name'],
+                        'type' => 'folder',
+                        'parent_code' => null
+                    ]
+                );
 
-                // Добавляем дочерние категории
+                $this->info("Обработана папка: {$folder['name']}");
+
+                // Обновляем или создаем дочерние категории
                 foreach ($folder['children'] as $category) {
-                    ExpenseCategory::create([
-                        'code' => $category['code'],
-                        'name' => $category['name'],
-                        'type' => 'category',
-                        'parent_code' => $folder['code']
-                    ]);
+                    $apiCodes[] = $category['code'];
 
-                    $this->info("- Добавлена категория: {$category['name']}");
+                    ExpenseCategory::updateOrCreate(
+                        ['code' => $category['code']],
+                        [
+                            'name' => $category['name'],
+                            'type' => 'category',
+                            'parent_code' => $folder['code']
+                        ]
+                    );
+
+                    $this->info("- Обработана категория: {$category['name']}");
                 }
+            }
+
+            // Удаляем категории, которых больше нет в API
+            $deletedCount = ExpenseCategory::whereNotIn('code', $apiCodes)->delete();
+            if ($deletedCount > 0) {
+                $this->info("Удалено устаревших категорий: {$deletedCount}");
             }
 
             DB::commit();
 
             $totalCategories = ExpenseCategory::count();
-            $this->info("Синхронизация успешно завершена! Всего категорий в базе: {$totalCategories}");
+            $totalLinks = DB::table('telegram_chat_expense_category')->count();
+
+            $this->info("Синхронизация успешно завершена!");
+            $this->info("Всего категорий в базе: {$totalCategories}");
+            $this->info("Активных связей с чатами: {$totalLinks}");
 
         } catch (\Exception $e) {
             DB::rollBack();

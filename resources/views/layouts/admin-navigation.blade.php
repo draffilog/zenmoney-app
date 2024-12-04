@@ -18,6 +18,9 @@
                     <x-nav-link :href="route('admin.settings.edit')" :active="request()->routeIs('admin.settings.*')">
                         {{ __('Settings') }}
                     </x-nav-link>
+                    <x-nav-link :href="route('admin.chats.index')" :active="request()->routeIs('admin.chats.*')">
+                        {{ __('Telegram Chats') }}
+                    </x-nav-link>
                 </div>
             </div>
 

@@ -27,6 +27,7 @@ Route::middleware(['auth', AdminMiddleware::class])->prefix('admin')->name('admi
     Route::get('/settings/token', [AdminSettingsController::class, 'index'])->name('settings.token');
 
     // Чаты
+    Route::get('/chats', [ChatController::class, 'index'])->name('chats.index');
     Route::get('/chats/create', [ChatController::class, 'create'])->name('chats.create');
     Route::post('/chats', [ChatController::class, 'store'])->name('chats.store');
     Route::get('/chats/{chat}', [ChatController::class, 'show'])->name('chats.show');
