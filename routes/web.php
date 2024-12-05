@@ -5,8 +5,12 @@ use App\Http\Controllers\Admin\SettingsController;
 use App\Http\Controllers\Admin\ChatController;
 use App\Http\Controllers\Admin\ZenMoneyProfileController;
 use App\Http\Controllers\AdminSettingsController;
+use App\Http\Controllers\TelegramController;
 use App\Http\Middleware\AdminMiddleware;
 use Illuminate\Support\Facades\Route;
+
+// Telegram webhook route - should be outside admin group
+Route::post('/telegram/webhook', [TelegramController::class, 'handleWebhook']);
 
 // Root route
 Route::get('/', function () {

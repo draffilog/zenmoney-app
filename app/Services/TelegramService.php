@@ -11,6 +11,7 @@ class TelegramService
 {
     protected $telegram;
     protected $zenMoneyService;
+    protected $awaitingInput = [];
 
     public function __construct(Api $telegram, ZenMoneyService $zenMoneyService)
     {
@@ -96,6 +97,7 @@ class TelegramService
             return;
         }
 
+        // Получаем только категории верхнего уровня (папки)
         $categories = $chat->getAvailableCategories();
 
         if ($categories->isEmpty()) {
@@ -167,24 +169,34 @@ class TelegramService
             return;
         }
 
-        // Получаем родительскую категорию
-        $parentCategory = ExpenseCategory::where('code', $categoryCode)->first();
-        if (!$parentCategory) {
+        $category = ExpenseCategory::where('code', $categoryCode)->first();
+        if (!$category) {
             return;
         }
 
-        // Получаем подкатегории, которые привязаны к чату
-        $subcategories = ExpenseCategory::where('parent_code', $parentCategory->code)
-            ->whereIn('id', $chat->expenseCategories->pluck('id'))
-            ->get();
+        // Если это конечная категория (категория второго уровня)
+        if ($category->type === 'category') {
+            $this->awaitingInput[$chatId] = [
+                'category_code' => $categoryCode
+            ];
+
+            $this->telegram->sendMessage([
+                'chat_id' => $chatId,
+                'text' => "Категория \"{$category->getFullPath()}\"\nВведите сумму и комментарий (например: 100.50 обед)"
+            ]);
+            return;
+        }
+
+        // Если это папка (категория первого уровня), показываем подкатегории
+        $subcategories = $chat->getAvailableCategories($categoryCode);
 
         $keyboard = Keyboard::make()->inline();
 
-        foreach ($subcategories as $category) {
+        foreach ($subcategories as $subCategory) {
             $keyboard->row([
                 Keyboard::inlineButton([
-                    'text' => $category->name,
-                    'callback_data' => 'cat_' . $category->code
+                    'text' => $subCategory['name'],
+                    'callback_data' => 'cat_' . $subCategory['code']
                 ])
             ]);
         }
@@ -195,8 +207,74 @@ class TelegramService
 
         $this->telegram->sendMessage([
             'chat_id' => $chatId,
-            'text' => 'Выберите подкатегорию расхода:',
+            'text' => "Категория \"{$category->name}\"\nВыберите подкатегорию:",
             'reply_markup' => $keyboard
         ]);
+    }
+
+    public function handleMessage($message)
+    {
+        $chatId = $message['chat']['id'];
+        $text = $message['text'] ?? '';
+
+        if (isset($this->awaitingInput[$chatId])) {
+            $this->handleExpenseInput($chatId, $text);
+            return;
+        }
+
+        if ($text === '/s') {
+            $this->showMainMenu($chatId);
+        }
+    }
+
+    protected function handleExpenseInput($chatId, $text)
+    {
+        $inputData = $this->awaitingInput[$chatId];
+
+        if (preg_match('/^(\d+(?:\.\d{1,2})?)\s*(.*)$/', trim($text), $matches)) {
+            $amount = floatval($matches[1]);
+            $comment = trim($matches[2] ?? '');
+
+            try {
+                $chat = TelegramChat::where('telegram_chat_id', $chatId)->first();
+                $category = ExpenseCategory::where('code', $inputData['category_code'])->first();
+
+                $transaction = $this->zenMoneyService->createTransaction([
+                    'income' => 0,
+                    'outcome' => $amount,
+                    'outcomeAccount' => $chat->zenmoneyAccount->code_zenmoney_account,
+                    'tag' => [$category->code],
+                    'comment' => $comment,
+                ]);
+
+                $balance = $this->zenMoneyService->getBalance($chat->zenmoneyAccount->code_zenmoney_account);
+
+                $this->telegram->sendMessage([
+                    'chat_id' => $chatId,
+                    'text' => sprintf(
+                        "%s, потрачено %.2f на '%s'.\nСчет '%s', баланс %.2f",
+                        $category->getFullPath(),
+                        $amount,
+                        $comment,
+                        $chat->zenmoneyAccount->name,
+                        $balance
+                    )
+                ]);
+
+            } catch (\Exception $e) {
+                $this->telegram->sendMessage([
+                    'chat_id' => $chatId,
+                    'text' => 'Ошибка при создании транзакции: ' . $e->getMessage()
+                ]);
+            }
+        } else {
+            $this->telegram->sendMessage([
+                'chat_id' => $chatId,
+                'text' => 'Неверный формат. Пожалуйста, введите сумму и комментарий (например: 100.50 обед)'
+            ]);
+            return;
+        }
+
+        unset($this->awaitingInput[$chatId]);
     }
 }

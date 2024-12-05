@@ -28,5 +28,6 @@ class Kernel extends ConsoleKernel
 
     protected $commands = [
         Commands\RunTelegramBotCommand::class,
+        \App\Console\Commands\SetTelegramWebhook::class,
     ];
 }

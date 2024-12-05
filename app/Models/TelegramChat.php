@@ -33,11 +33,20 @@ class TelegramChat extends Model
     /**
      * Получить все доступные категории расходов для чата
      */
-    public function getAvailableCategories()
+    public function getAvailableCategories($parentCode = null)
     {
-        return $this->expenseCategories()
-            ->orderBy('name')
-            ->get()
+        $query = $this->expenseCategories()
+            ->orderBy('name');
+
+        if ($parentCode === null) {
+            // Получаем только категории верхнего уровня
+            $query->whereNull('parent_code');
+        } else {
+            // Получаем подкатегории для указанной родительской категории
+            $query->where('parent_code', $parentCode);
+        }
+
+        return $query->get()
             ->map(function ($category) {
                 return [
                     'id' => $category->id,
@@ -45,6 +54,7 @@ class TelegramChat extends Model
                     'name' => $category->name,
                     'full_path' => $category->getFullPath(),
                     'is_leaf' => $category->isLeaf(),
+                    'type' => $category->type,
                 ];
             });
     }
@@ -79,9 +89,23 @@ class TelegramChat extends Model
     public function addExpenseCategory($categoryCode)
     {
         $category = ExpenseCategory::where('code', $categoryCode)->first();
-        if ($category && !$this->hasCategoryWithCode($categoryCode)) {
-            $this->expenseCategories()->attach($category->id);
+        if (!$category) {
+            return $this;
         }
+
+        // Если категория еще не привязана к чату
+        if (!$this->hasCategoryWithCode($categoryCode)) {
+            $this->expenseCategories()->attach($category->id);
+
+            // Если это подкатегория, добавляем также родительскую категорию
+            if ($category->parent_code) {
+                $parentCategory = ExpenseCategory::where('code', $category->parent_code)->first();
+                if ($parentCategory && !$this->hasCategoryWithCode($parentCategory->code)) {
+                    $this->expenseCategories()->attach($parentCategory->id);
+                }
+            }
+        }
+
         return $this;
     }
 }

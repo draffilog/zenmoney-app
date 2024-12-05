@@ -125,7 +125,30 @@ class ZenMoneyService
 
     public function createTransaction(array $data): array
     {
-        return $this->makeRequest('POST', 'transactions', $data);
+        try {
+            $response = Http::withHeaders([
+                'Authorization' => "Bearer {$this->token}",
+                'Content-Type' => 'application/json'
+            ])->post("{$this->baseUrl}/transaction", [
+                'transaction' => [
+                    'created' => time(),
+                    'income' => $data['income'],
+                    'outcome' => $data['outcome'],
+                    'outcomeAccount' => $data['outcomeAccount'],
+                    'tag' => $data['tag'],
+                    'comment' => $data['comment'],
+                ]
+            ]);
+
+            if (!$response->successful()) {
+                throw new \Exception('Failed to create transaction: ' . $response->body());
+            }
+
+            return $response->json();
+        } catch (\Exception $e) {
+            Log::error('Error creating transaction: ' . $e->getMessage());
+            throw $e;
+        }
     }
 
     protected function makeRequest(string $method, string $endpoint, array $data = []): array
@@ -318,6 +341,108 @@ class ZenMoneyService
             }
         } catch (\Exception $e) {
             Log::error('Ошибка при получении категорий из API: ' . $e->getMessage());
+            throw $e;
+        }
+    }
+
+    public function createExpenseTransaction($accountId, $amount, $comment, $categoryId)
+    {
+        Log::info("Creating expense transaction", [
+            'account_id' => $accountId,
+            'amount' => $amount,
+            'comment' => $comment,
+            'category_id' => $categoryId
+        ]);
+
+        $transaction = [
+            'created' => time(),
+            'changed' => time(),
+            'incomeAccount' => $accountId,
+            'income' => 0,
+            'outcomeAccount' => $accountId,
+            'outcome' => $amount,
+            'comment' => $comment,
+            'tag' => [$categoryId],
+            'date' => date('Y-m-d')
+        ];
+
+        try {
+            Log::info("Sending transaction to ZenMoney", ['transaction' => $transaction]);
+
+            $response = Http::withHeaders([
+                'Authorization' => "Bearer {$this->token}",
+                'Content-Type' => 'application/json'
+            ])->post("{$this->baseUrl}/diff", [
+                'currentClientTimestamp' => time(),
+                'transaction' => [$transaction]
+            ]);
+
+            Log::info("ZenMoney response", [
+                'status' => $response->status(),
+                'body' => $response->json()
+            ]);
+
+            if (!$response->successful()) {
+                Log::error('ZenMoney transaction error', [
+                    'status' => $response->status(),
+                    'body' => $response->body()
+                ]);
+                throw new \Exception('Failed to create transaction: ' . $response->body());
+            }
+
+            return $response->json();
+
+        } catch (\Exception $e) {
+            Log::error('ZenMoney transaction error', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            throw $e;
+        }
+    }
+
+    public function getAccountBalance($accountId)
+    {
+        try {
+            Log::info("Getting account balance", ['account_id' => $accountId]);
+
+            $response = Http::withHeaders([
+                'Authorization' => "Bearer {$this->token}",
+                'Content-Type' => 'application/json'
+            ])->post("{$this->baseUrl}/diff", [
+                'currentClientTimestamp' => time(),
+                'lastServerTimestamp' => 0
+            ]);
+
+            if (!$response->successful()) {
+                Log::error('Failed to get balance', [
+                    'status' => $response->status(),
+                    'body' => $response->body()
+                ]);
+                throw new \Exception('Failed to get balance: ' . $response->body());
+            }
+
+            $data = $response->json();
+
+            // Find the account in the response
+            foreach ($data['account'] ?? [] as $account) {
+                if ($account['id'] === $accountId) {
+                    Log::info("Balance found", [
+                        'account_id' => $accountId,
+                        'balance' => $account['balance']
+                    ]);
+                    return $account['balance'];
+                }
+            }
+
+            Log::warning("Account not found", ['account_id' => $accountId]);
+            return null;
+
+        } catch (\Exception $e) {
+            Log::error('Balance check error', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
             throw $e;
         }
     }
