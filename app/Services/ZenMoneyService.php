@@ -345,60 +345,24 @@ class ZenMoneyService
         }
     }
 
-    public function createExpenseTransaction($accountId, $amount, $comment, $categoryId)
+    public function createExpenseTransaction($accountId, $amount, $comment, $categoryCode)
     {
-        Log::info("Creating expense transaction", [
-            'account_id' => $accountId,
-            'amount' => $amount,
-            'comment' => $comment,
-            'category_id' => $categoryId
-        ]);
-
-        $transaction = [
+        $data = [
             'created' => time(),
             'changed' => time(),
-            'incomeAccount' => $accountId,
             'income' => 0,
-            'outcomeAccount' => $accountId,
             'outcome' => $amount,
+            'incomeAccount' => '0',
+            'outcomeAccount' => $accountId,
+            'tag' => [],
+            'merchant' => null,
+            'payee' => null,
+            'originalPayee' => null,
             'comment' => $comment,
-            'tag' => [$categoryId],
-            'date' => date('Y-m-d')
+            'category' => $categoryCode,
         ];
 
-        try {
-            Log::info("Sending transaction to ZenMoney", ['transaction' => $transaction]);
-
-            $response = Http::withHeaders([
-                'Authorization' => "Bearer {$this->token}",
-                'Content-Type' => 'application/json'
-            ])->post("{$this->baseUrl}/diff", [
-                'currentClientTimestamp' => time(),
-                'transaction' => [$transaction]
-            ]);
-
-            Log::info("ZenMoney response", [
-                'status' => $response->status(),
-                'body' => $response->json()
-            ]);
-
-            if (!$response->successful()) {
-                Log::error('ZenMoney transaction error', [
-                    'status' => $response->status(),
-                    'body' => $response->body()
-                ]);
-                throw new \Exception('Failed to create transaction: ' . $response->body());
-            }
-
-            return $response->json();
-
-        } catch (\Exception $e) {
-            Log::error('ZenMoney transaction error', [
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
-            ]);
-            throw $e;
-        }
+        return $this->makeRequest('POST', '/v8/transaction', ['transaction' => $data]);
     }
 
     public function getAccountBalance($accountId)

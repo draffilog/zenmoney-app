@@ -6,6 +6,7 @@ use App\Models\TelegramChat;
 use Telegram\Bot\Api;
 use Telegram\Bot\Keyboard\Keyboard;
 use App\Models\ExpenseCategory;
+use Illuminate\Support\Facades\Log;
 
 class TelegramService
 {
@@ -212,69 +213,75 @@ class TelegramService
         ]);
     }
 
-    public function handleMessage($message)
+    public function handleMessage($chatId, $text)
     {
-        $chatId = $message['chat']['id'];
-        $text = $message['text'] ?? '';
-
-        if (isset($this->awaitingInput[$chatId])) {
-            $this->handleExpenseInput($chatId, $text);
+        // Проверяем, ожидаем ли мы ввода суммы для этого чата
+        if (!isset($this->awaitingInput[$chatId]) || !isset($this->awaitingInput[$chatId]['category_code'])) {
             return;
         }
 
-        if ($text === '/s') {
-            $this->showMainMenu($chatId);
-        }
-    }
+        try {
+            // Разбираем сообщение на сумму и комментарий
+            $parts = explode(' ', $text, 2);
+            $amount = floatval($parts[0]);
+            $comment = $parts[1] ?? '';
 
-    protected function handleExpenseInput($chatId, $text)
-    {
-        $inputData = $this->awaitingInput[$chatId];
-
-        if (preg_match('/^(\d+(?:\.\d{1,2})?)\s*(.*)$/', trim($text), $matches)) {
-            $amount = floatval($matches[1]);
-            $comment = trim($matches[2] ?? '');
-
-            try {
-                $chat = TelegramChat::where('telegram_chat_id', $chatId)->first();
-                $category = ExpenseCategory::where('code', $inputData['category_code'])->first();
-
-                $transaction = $this->zenMoneyService->createTransaction([
-                    'income' => 0,
-                    'outcome' => $amount,
-                    'outcomeAccount' => $chat->zenmoneyAccount->code_zenmoney_account,
-                    'tag' => [$category->code],
-                    'comment' => $comment,
-                ]);
-
-                $balance = $this->zenMoneyService->getBalance($chat->zenmoneyAccount->code_zenmoney_account);
-
+            if ($amount <= 0) {
                 $this->telegram->sendMessage([
                     'chat_id' => $chatId,
-                    'text' => sprintf(
-                        "%s, потрачено %.2f на '%s'.\nСчет '%s', баланс %.2f",
-                        $category->getFullPath(),
-                        $amount,
-                        $comment,
-                        $chat->zenmoneyAccount->name,
-                        $balance
-                    )
+                    'text' => 'Пожалуйста, введите корректную сумму'
                 ]);
-
-            } catch (\Exception $e) {
-                $this->telegram->sendMessage([
-                    'chat_id' => $chatId,
-                    'text' => 'Ошибка при создании транзакции: ' . $e->getMessage()
-                ]);
+                return;
             }
-        } else {
+
+            $categoryCode = $this->awaitingInput[$chatId]['category_code'];
+
+            // Получаем чат из базы данных
+            $chat = TelegramChat::where('telegram_chat_id', $chatId)->first();
+            if (!$chat) {
+                throw new \Exception('Чат не настроен');
+            }
+
+            // Создаем транзакцию в ZenMoney
+            $result = $this->zenMoneyService->createExpenseTransaction(
+                $chat->zenmoney_account_id,
+                $amount,
+                $comment,
+                $categoryCode
+            );
+
+            // Получаем обновленный баланс
+            $balance = $this->zenMoneyService->getBalance($chat->zenmoney_account_id);
+
+            // Получаем название категории
+            $category = ExpenseCategory::where('code', $categoryCode)->first();
+
+            // Отправляем подтверждение
             $this->telegram->sendMessage([
                 'chat_id' => $chatId,
-                'text' => 'Неверный формат. Пожалуйста, введите сумму и комментарий (например: 100.50 обед)'
+                'text' => sprintf(
+                    "✅ Расход записан\nКатегория: %s\nСумма: %.2f\nКомментарий: %s\nТекущий баланс: %.2f",
+                    $category->name,
+                    $amount,
+                    $comment,
+                    $balance
+                )
             ]);
-            return;
-        }
 
-        unset($this->awaitingInput[$chatId]);
+            // Очищаем состояние ожидания
+            unset($this->awaitingInput[$chatId]);
+
+        } catch (\Exception $e) {
+            Log::error('Error creating expense: ' . $e->getMessage(), [
+                'chat_id' => $chatId,
+                'text' => $text,
+                'category' => $categoryCode ?? null
+            ]);
+
+            $this->telegram->sendMessage([
+                'chat_id' => $chatId,
+                'text' => 'Произошла ошибка при сохранении расхода: ' . $e->getMessage()
+            ]);
+        }
     }
 }
