@@ -29,17 +29,21 @@ class RunTelegramBotCommand extends Command
                     \Log::info('Received update', ['update' => $update]);
 
                     if ($update['message'] ?? null) {
-                        $telegramService->handleCommand($update['message']);
+                        $chatId = $update['message']['chat']['id'];
+                        $text = $update['message']['text'];
+                        $telegramService->handleMessage($chatId, $text);
                     } elseif ($update['callback_query'] ?? null) {
-                        $telegramService->handleCallback($update['callback_query']);
+                        $chatId = $update['callback_query']['message']['chat']['id'];
+                        $data = $update['callback_query']['data'];
+                        $telegramService->handleCallback($chatId, $data);
                     }
 
                     $lastUpdateId = $update['update_id'];
                 }
 
-                sleep(1);
+                sleep(2);
             } catch (\Exception $e) {
-                $this->error($e->getMessage());
+                \Log::error('Error: ' . $e->getMessage());
                 sleep(5);
             }
         }

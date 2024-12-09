@@ -23,18 +23,22 @@ class TelegramController extends Controller
         try {
             $update = Telegram::commandsHandler(true);
 
-            // Обработка обычных сообщений (сумма расхода)
+            // Обработка сообщений
             if ($message = $update->getMessage()) {
-                if ($message->has('text') && !$message->has('entities')) {
-                    $chatId = $message->getChat()->getId();
-                    $text = $message->getText();
+                $chatId = $message->getChat()->getId();
+                $text = $message->getText();
 
-                    $this->telegramService->handleMessage($chatId, $text);
-                    return response()->json(['status' => 'success']);
-                }
+                Log::info('Received message', [
+                    'chat_id' => $chatId,
+                    'text' => $text
+                ]);
+
+                // Передаем все сообщения в TelegramService
+                $this->telegramService->handleMessage($chatId, $text);
+                return response()->json(['status' => 'success']);
             }
 
-            // Обработка callback query (выбор категории)
+            // Обработка callback query
             if ($callbackQuery = $update->getCallbackQuery()) {
                 $chatId = $callbackQuery->getMessage()->getChat()->getId();
                 $data = $callbackQuery->getData();

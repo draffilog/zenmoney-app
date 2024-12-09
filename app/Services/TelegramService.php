@@ -29,10 +29,16 @@ class TelegramService
         }
     }
 
-    public function handleCallback($callback)
+    public function handleCallback($chatId, $data)
     {
-        $chatId = $callback['message']['chat']['id'];
-        $data = $callback['data'];
+        Log::info('Handling callback', [
+            'chat_id' => $chatId,
+            'data' => $data,
+            'awaiting_input' => $this->awaitingInput
+        ]);
+
+        $chatId = $chatId;
+        $data = $data;
 
         if (str_starts_with($data, 'cat_')) {
             $categoryId = substr($data, 4);
@@ -139,18 +145,20 @@ class TelegramService
 
     public function showMainMenu($chatId)
     {
-        $keyboard = Keyboard::make()
-            ->inline()
-            ->row([
-                Keyboard::inlineButton(['text' => 'Расходы', 'callback_data' => 'expenses']),
-                Keyboard::inlineButton(['text' => 'Баланс', 'callback_data' => 'balance']),
-                Keyboard::inlineButton(['text' => 'Выход', 'callback_data' => 'exit'])
-            ]);
+        $keyboard = [
+            'inline_keyboard' => [
+                [
+                    ['text' => 'Расходы', 'callback_data' => 'expenses'],
+                    ['text' => 'Баланс', 'callback_data' => 'balance'],
+                    ['text' => 'Выход', 'callback_data' => 'exit']
+                ]
+            ]
+        ];
 
         $this->telegram->sendMessage([
             'chat_id' => $chatId,
             'text' => 'Выберите действие:',
-            'reply_markup' => $keyboard
+            'reply_markup' => json_encode($keyboard)
         ]);
     }
 
@@ -188,7 +196,7 @@ class TelegramService
             return;
         }
 
-        // Если это папка (категория первого уровня), показываем подкатегории
+        // Если это папка (категория п��рвого уровня), показываем подкатегории
         $subcategories = $chat->getAvailableCategories($categoryCode);
 
         $keyboard = Keyboard::make()->inline();
@@ -215,7 +223,18 @@ class TelegramService
 
     public function handleMessage($chatId, $text)
     {
-        // Проверяем, ожидаем ли мы ввода суммы для этого чата
+        Log::info('Handling message', [
+            'chat_id' => $chatId,
+            'text' => $text
+        ]);
+
+        // Обработка команды /s
+        if ($text === '/s') {
+            $this->showMainMenu($chatId);
+            return;
+        }
+
+        // Остальная логика обработки сообщений (для сумм расходов)
         if (!isset($this->awaitingInput[$chatId]) || !isset($this->awaitingInput[$chatId]['category_code'])) {
             return;
         }
@@ -280,7 +299,7 @@ class TelegramService
 
             $this->telegram->sendMessage([
                 'chat_id' => $chatId,
-                'text' => 'Произошла ошибка при сохранении расхода: ' . $e->getMessage()
+                'text' => 'Произошла ошибка при сохранении рас��ода: ' . $e->getMessage()
             ]);
         }
     }
