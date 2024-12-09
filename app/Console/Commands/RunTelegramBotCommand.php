@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use Illuminate\Console\Command;
 use App\Services\TelegramService;
 use Telegram\Bot\Api;
+use Illuminate\Support\Facades\Log;
 
 class RunTelegramBotCommand extends Command
 {
@@ -19,32 +20,30 @@ class RunTelegramBotCommand extends Command
 
         $telegram->deleteWebhook();
 
-        $lastUpdateId = 0;
+        $offset = 155340318;
 
         while (true) {
             try {
-                $updates = $telegram->getUpdates(['offset' => $lastUpdateId + 1]);
+                $updates = $telegram->getUpdates(['offset' => $offset, 'timeout' => 30]);
 
                 foreach ($updates as $update) {
-                    \Log::info('Received update', ['update' => $update]);
+                    Log::info('Processing update', ['update_id' => $update->update_id]);
+                    $offset = $update->update_id + 1;
 
-                    if ($update['message'] ?? null) {
-                        $chatId = $update['message']['chat']['id'];
-                        $text = $update['message']['text'];
-                        $telegramService->handleMessage($chatId, $text);
-                    } elseif ($update['callback_query'] ?? null) {
-                        $chatId = $update['callback_query']['message']['chat']['id'];
-                        $data = $update['callback_query']['data'];
-                        $telegramService->handleCallback($chatId, $data);
+                    if (isset($update['message'])) {
+                        $telegramService->handleMessage($update['message']);
+                    } elseif (isset($update['callback_query'])) {
+                        $telegramService->handleCallback(
+                            $update['callback_query']['message']['chat']['id'],
+                            $update['callback_query']['data']
+                        );
                     }
-
-                    $lastUpdateId = $update['update_id'];
                 }
 
-                sleep(2);
+                usleep(100000);
             } catch (\Exception $e) {
-                \Log::error('Error: ' . $e->getMessage());
-                sleep(5);
+                Log::error($e->getMessage());
+                continue;
             }
         }
     }

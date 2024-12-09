@@ -6,6 +6,7 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 
 class ZenMoneyService
@@ -269,7 +270,7 @@ class ZenMoneyService
             // Получаем категории из API
             $categories = $this->getCategories();
 
-            // Начинаем транзакцию
+            // Начинаем транзацию
             DB::beginTransaction();
 
             try {
@@ -340,29 +341,58 @@ class ZenMoneyService
                 throw $e;
             }
         } catch (\Exception $e) {
-            Log::error('Ошибка при получении категорий из API: ' . $e->getMessage());
+            Log::error('Ошибка при получении к��тегорий из API: ' . $e->getMessage());
             throw $e;
         }
     }
 
-    public function createExpenseTransaction($accountId, $amount, $comment, $categoryCode)
+    public function createExpenseTransaction($accountId, $amount, $comment, $category)
     {
-        $data = [
+        $transaction = [
+            'id' => Str::uuid()->toString(),
             'created' => time(),
             'changed' => time(),
+            'user' => 1923771,
+            'deleted' => false,
             'income' => 0,
             'outcome' => $amount,
-            'incomeAccount' => '0',
+            'incomeAccount' => "0",
             'outcomeAccount' => $accountId,
-            'tag' => [],
-            'merchant' => null,
-            'payee' => null,
-            'originalPayee' => null,
+            'incomeInstrument' => 2, // RUB
+            'outcomeInstrument' => 2, // RUB
+            'tag' => [$category],
             'comment' => $comment,
-            'category' => $categoryCode,
+            'date' => date('Y-m-d'),
+            'payee' => "" // Empty string instead of null
         ];
 
-        return $this->makeRequest('POST', '/v8/transaction', ['transaction' => $data]);
+        try {
+            $response = Http::withHeaders([
+                'Authorization' => "Bearer {$this->token}",
+                'Content-Type' => 'application/json'
+            ])->post("{$this->baseUrl}/diff", [
+                'currentClientTimestamp' => time(),
+                'serverTimestamp' => 0,
+                'transaction' => [$transaction]
+            ]);
+
+            if (!$response->successful()) {
+                Log::error('ZenMoney API error', [
+                    'error' => $response->body(),
+                    'request_data' => $transaction
+                ]);
+                throw new \Exception($response->body());
+            }
+
+            return $response->json();
+        } catch (\Exception $e) {
+            Log::error('Error creating expense: ' . $e->getMessage(), [
+                'account_id' => $accountId,
+                'amount' => $amount,
+                'category' => $category
+            ]);
+            throw $e;
+        }
     }
 
     public function getAccountBalance($accountId)
