@@ -516,7 +516,7 @@ class ZenMoneyService
     // Метод для получения User ID
     protected function getUserId()
     {
-        // Проверяем, есть ли уже закешированный User ID
+        // Проверяем, есь ли уже закешированный User ID
         if (isset($this->userId)) {
             return $this->userId;
         }
@@ -613,23 +613,36 @@ class ZenMoneyService
                 'changed' => time(),
                 'user' => $this->getUserId(),
                 'deleted' => false,
-                
 
                 // Приходная часть (транзитный счет)
-                'incomeAccount' => (string)$transitAccountId,
+                'incomeAccount' => (string)$accountId,
                 'incomeInstrument' => $accountInfo['instrument'] ?? 2,
                 'income' => (float)$amount,
 
                 // Расходная часть (основной счет)
-                'outcomeAccount' => (string)$accountId,
+                'outcomeAccount' => (string)$transitAccountId,
                 'outcomeInstrument' => $accountInfo['instrument'] ?? 2,
                 'outcome' => (float)$amount,
 
                 // Дополнительная информация
                 'date' => date('Y-m-d'),
-                'comment' => $comment ?: 'Перевод на транзитный счет'
-            ];
+                'comment' => $comment ?: 'Перевод на транзитный счет',
 
+                // Изменяем формат тега для доходов
+                'tag' => null,
+                'merchant' => null,
+                'payee' => null,
+                'reminderMarker' => null,
+                'incomeBankID' => null,
+                'outcomeBankID' => null,
+                'opIncome' => null,
+                'opIncomeInstrument' => null,
+                'opOutcome' => null,
+                'opOutcomeInstrument' => null,
+                'latitude' => null,
+                'longitude' => null,
+
+            ];
             $response = Http::withHeaders([
                 'Authorization' => "Bearer {$this->token}",
                 'Content-Type' => 'application/json'

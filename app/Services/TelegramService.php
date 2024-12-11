@@ -298,6 +298,11 @@ class TelegramService
                     $chat->transit_account_id
                 );
             } else {
+                $categoryCode = $this->awaitingInput[$message['chat']['id']]['category_code'] ?? null;
+                if (!$categoryCode) {
+                    throw new \Exception('Категория не указана');
+                }
+
                 $result = $this->zenMoneyService->createExpenseTransaction(
                     $chat->zenmoney_account_id,
                     $amount,
