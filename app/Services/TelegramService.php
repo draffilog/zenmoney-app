@@ -37,12 +37,17 @@ class TelegramService
             'awaiting_input' => $this->awaitingInput
         ]);
 
-        $chatId = $chatId;
-        $data = $data;
-
+        // Обработка категорий расходов
         if (str_starts_with($data, 'cat_')) {
             $categoryId = substr($data, 4);
-            $this->showSubcategories($chatId, $categoryId);
+            $this->showSubcategories($chatId, $categoryId, 'expense');
+            return;
+        }
+
+        // Обработка категорий доходов
+        if (str_starts_with($data, 'income_cat_')) {
+            $categoryId = substr($data, 10);
+            $this->showSubcategories($chatId, $categoryId, 'income');
             return;
         }
 
@@ -52,6 +57,9 @@ class TelegramService
                 break;
             case 'expenses':
                 $this->showExpenseCategories($chatId);
+                break;
+            case 'income':
+                $this->showIncomeCategories($chatId);
                 break;
             case 'back':
                 $this->showMainMenu($chatId);
@@ -149,7 +157,10 @@ class TelegramService
             'inline_keyboard' => [
                 [
                     ['text' => 'Расходы', 'callback_data' => 'expenses'],
-                    ['text' => 'Баланс', 'callback_data' => 'balance'],
+                    ['text' => 'Доходы', 'callback_data' => 'income'],
+                    ['text' => 'Баланс', 'callback_data' => 'balance']
+                ],
+                [
                     ['text' => 'Выход', 'callback_data' => 'exit']
                 ]
             ]
@@ -171,8 +182,23 @@ class TelegramService
         ]);
     }
 
-    protected function showSubcategories($chatId, $categoryCode)
+    protected function showSubcategories($chatId, $categoryCode, $type = 'expense')
     {
+        // Заменяем dd() на логирование
+        Log::info('Showing subcategories', [
+            'params' => [
+                'chat_id' => $chatId,
+                'category_code' => $categoryCode,
+                'type' => $type
+            ],
+            'chat' => TelegramChat::where('telegram_chat_id', $chatId)->first()?->toArray(),
+            'category' => ExpenseCategory::where('code', $categoryCode)->first()?->toArray(),
+            'subcategories' => TelegramChat::where('telegram_chat_id', $chatId)
+                ->first()
+                ?->getAvailableCategories($categoryCode)
+                ?->toArray()
+        ]);
+
         $chat = TelegramChat::where('telegram_chat_id', $chatId)->first();
         if (!$chat) {
             return;
@@ -186,12 +212,14 @@ class TelegramService
         // Если это конечная категория (категория второго уровня)
         if ($category->type === 'category') {
             $this->awaitingInput[$chatId] = [
-                'category_code' => $categoryCode
+                'category_code' => $categoryCode,
+                'type' => $type
             ];
 
             $this->telegram->sendMessage([
                 'chat_id' => $chatId,
-                'text' => "Категория \"{$category->getFullPath()}\"\nВведите сумму и комментарий (например: 100.50 обед)"
+                'text' => "Категория \"{$category->getFullPath()}\"\nВведите сумму и комментарий (например: 100.50 " .
+                    ($type === 'income' ? 'зарплата' : 'обед') . ")"
             ]);
             return;
         }
@@ -205,13 +233,13 @@ class TelegramService
             $keyboard->row([
                 Keyboard::inlineButton([
                     'text' => $subCategory['name'],
-                    'callback_data' => 'cat_' . $subCategory['code']
+                    'callback_data' => ($type === 'income' ? 'income_cat_' : 'cat_') . $subCategory['code']
                 ])
             ]);
         }
 
         $keyboard->row([
-            Keyboard::inlineButton(['text' => 'Назад', 'callback_data' => 'expenses'])
+            Keyboard::inlineButton(['text' => 'Назад', 'callback_data' => $type === 'income' ? 'income' : 'expenses'])
         ]);
 
         $this->telegram->sendMessage([
@@ -223,9 +251,8 @@ class TelegramService
 
     public function handleMessage($message)
     {
-        // Проверяем наличие текста в сообщении
         if (!isset($message['text'])) {
-            return; // Пропускаем сообщения без текста
+            return;
         }
 
         Log::info('Handling message', [
@@ -233,19 +260,16 @@ class TelegramService
             'text' => $message['text']
         ]);
 
-        // Обработка команды /s
         if ($message['text'] === '/s') {
             $this->showMainMenu($message['chat']['id']);
             return;
         }
 
-        // Остальная логика обработки сообщений (для сумм расходов)
-        if (!isset($this->awaitingInput[$message['chat']['id']]) || !isset($this->awaitingInput[$message['chat']['id']]['category_code'])) {
+        if (!isset($this->awaitingInput[$message['chat']['id']])) {
             return;
         }
 
         try {
-            // Разбираем сообщение на сумму и комментарий
             $parts = explode(' ', $message['text'], 2);
             $amount = floatval($parts[0]);
             $comment = $parts[1] ?? '';
@@ -258,54 +282,85 @@ class TelegramService
                 return;
             }
 
-            $categoryCode = $this->awaitingInput[$message['chat']['id']]['category_code'];
-
-            // Получаем чат из базы данных
+            $type = $this->awaitingInput[$message['chat']['id']]['type'] ?? 'expense';
             $chat = TelegramChat::where('telegram_chat_id', $message['chat']['id'])->first();
+
             if (!$chat) {
                 throw new \Exception('Чат не настроен');
             }
 
-            // Создаем транзакцию в ZenMoney
-            $result = $this->zenMoneyService->createExpenseTransaction(
-                $chat->zenmoney_account_id,
-                $amount,
-                $comment,
-                $categoryCode
-            );
+            // Создаем транзакцию в зависимости от типа
+            if ($type === 'income') {
+                $result = $this->zenMoneyService->createIncomeTransaction(
+                    $chat->zenmoney_account_id,
+                    $amount,
+                    $comment,
+                    $chat->transit_account_id
+                );
+            } else {
+                $result = $this->zenMoneyService->createExpenseTransaction(
+                    $chat->zenmoney_account_id,
+                    $amount,
+                    $comment,
+                    $categoryCode
+                );
+            }
 
-            // Получаем обновленный баланс
             $balance = $this->zenMoneyService->getBalance($chat->zenmoney_account_id);
 
-            // Получаем название категории
-            $category = ExpenseCategory::where('code', $categoryCode)->first();
-
-            // Отправляем подтверждение
             $this->telegram->sendMessage([
                 'chat_id' => $message['chat']['id'],
                 'text' => sprintf(
-                    "✅ Расход записан\nКатегория: %s\nСумма: %.2f\nКомментарий: %s\nТекущий баланс: %.2f",
-                    $category->name,
+                    "✅ %s записан\nСумма: %.2f\nКомментарий: %s\nТекущий баланс: %.2f",
+                    $type === 'income' ? 'Доход' : 'Расход',
                     $amount,
                     $comment,
                     $balance
                 )
             ]);
 
-            // Очищаем состояние ожидания
             unset($this->awaitingInput[$message['chat']['id']]);
 
         } catch (\Exception $e) {
-            Log::error('Error creating expense: ' . $e->getMessage(), [
+            Log::error('Error creating transaction: ' . $e->getMessage(), [
                 'chat_id' => $message['chat']['id'],
-                'text' => $message['text'],
-                'category' => $categoryCode ?? null
+                'text' => $message['text']
             ]);
 
             $this->telegram->sendMessage([
                 'chat_id' => $message['chat']['id'],
-                'text' => 'Произошла ошибка при сохранении расхода: ' . $e->getMessage()
+                'text' => 'Произошла ошибка при сохранении: ' . $e->getMessage()
             ]);
         }
+    }
+
+    protected function showIncomeCategories($chatId)
+    {
+        $chat = TelegramChat::where('telegram_chat_id', $chatId)
+            ->first();
+
+        if (!$chat) {
+            $this->telegram->sendMessage([
+                'chat_id' => $chatId,
+                'text' => 'Чат не настроен. Обратитесь к администратору.'
+            ]);
+            return;
+        }
+
+        // Запрашиваем сумму для перевода
+        $this->awaitingInput[$chatId] = [
+            'type' => 'income'
+        ];
+
+        $keyboard = Keyboard::make()->inline();
+        $keyboard->row([
+            Keyboard::inlineButton(['text' => 'Назад', 'callback_data' => 'back'])
+        ]);
+
+        $this->telegram->sendMessage([
+            'chat_id' => $chatId,
+            'text' => 'Введите сумму дохода и комментарий (например: 1000 Зарплата):',
+            'reply_markup' => $keyboard
+        ]);
     }
 }
